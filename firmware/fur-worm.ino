@@ -31,25 +31,6 @@ int servoPerlin;    // servo
 
 int squeezed=300;   // the minimum before it is decided that you are squeezing it
 int millisAtStateChange=0;
-int lastMonitor=0;
-
-int nextMotion;
-
-int timeBetweenMotionsVariation[5] {
-    0,
-    3000,
-    200,
-    100,
-    10
-};
-
-int timeBetweenMotions[5] {
-    0,
-    6000,
-    200,
-    100,
-    10
-};
 
 int state=0;
 // 0: recover
@@ -60,6 +41,7 @@ int state=0;
 // 5: sleep (dead)
 
 int monitorInterval=250; // ms interval to take average and monitor for state change
+int lastMonitor=0;
 
 // time thresholds to move onto the next state-- you must be held for this long in order to move on. recover has none b/c it is a pre-set function. death throes will eventually kill the robot.
 int stateThresholds[5]={
@@ -116,14 +98,24 @@ int stateServoBias[5] {
 };
 // increase this bias intensity with time
 
-// sound probability (out of 100)
+// sound probability (out of 10000 (10 seconds))
 // if below, pin low. If above, pin high.
 int soundProbability[5] {
     0,
-    1,
-    20,
-    40,
-    80
+    5000,
+    9000,
+    8000, // these don't count since they will be on always
+    10000
+};
+
+
+// this should be the likelihood of motion, out of 10000 (10 seconds)
+int motionProbability[5] {
+  10000,  // always
+  1, // once every 10 seconds
+  500,  // ten times a second
+  1000, // 100 times a second
+  8000 // frequently
 };
 
 
@@ -135,17 +127,17 @@ void setup() {
     s0.attach(s0pin);
     s1.attach(s1pin);
     s2.attach(s2pin);
-    
+
     // activate fsr or fabric
     pinMode(skinPin,INPUT_PULLDOWN);
-    
+
     // power pin
     pinMode(powerPin,OUTPUT);
     digitalWrite(powerPin,HIGH);
-    
+
     // speaking pins
     pinMode(soundPins[1],OUTPUT);
-    pinMode(soundPins[2],OUTPUT); 
+    pinMode(soundPins[2],OUTPUT);
     pinMode(soundPins[3],OUTPUT);
     pinMode(soundPins[4],OUTPUT);
     digitalWrite(soundPins[1],HIGH);
@@ -156,51 +148,63 @@ void setup() {
     // call acceleration remotely
     Particle.function("a",accelerate);
     Particle.function("v",linear);
-    
+
     // set up serial for debug
     Serial.begin(9600);
-    
+
     // set to wakeup position
     startPos();
-    
+
 }
 
 void loop() {
-    
+
     sense = 3824-analogRead(skinPin);
 
     // Serial.println("Got sense: "+String(sense));
-    
+
     int newState=checkForHeld(state);
     // Serial.println("Sense: "+String(sense));
     // Serial.println("New State: " + String(newState));
 
-    if (newState==0) {
-        state=1;
+    if (newState!=state) {
+      // actual new state
+      if (newState==0) {
+        setCry(1,0);
+        setCry(2,0);
+        setCry(3,0);
+        setCry(4,0);
         recover();
-    }
-    else if (newState==5) {
-        // turn off
-        // for now reset to 0
-        System.sleep();
-    }
-    else {
+        state=1;
+      }
+      else if (newState==3) {
+        digitalWrite(soundPins[3],LOW);
         state=newState;
-        if (millis()>nextMotion) {movement(state);}
+      }
+      else if (newState==4) {
+        setCry(3,0);
+        digitalWrite(soundPins[4],LOW);
+        state=newState;
+      }
+      else if (newState==5) {
+        setCry(4,0);
+        state=0;
+        System.sleep(120000);
+      }
+      else {
+        state=newState;
+      }
     }
-    
+    else {  // regular state
+        state=newState;
+        takeAction(state);
+    }
+
     // Serial.println("------");
-    
+
     // thinky-looking delay
     delay(10);
 
-}
-
-int getNextMotionTime(int s) {
-    int t=millis();
-    int n=random((timeBetweenMotions[s]-timeBetweenMotionsVariation[s]),timeBetweenMotions[s])+t;
-    Serial.println("next motion in: "+String(n-t));
-    return n;
 }
 
 int checkForHeld(int s) {
@@ -214,7 +218,6 @@ int checkForHeld(int s) {
             if (t>millisAtStateChange+stateThresholds[s]) {
                 millisAtStateChange=millis();
                 r=s+1; // progress to the next state
-                nextMotion=getNextMotionTime(r);
                 Serial.println("                    progressing to "+String(r));
             }
             else {r=s;}
@@ -224,7 +227,6 @@ int checkForHeld(int s) {
             if (s>=2){
                 Serial.println("                    recover");
                 movement(0);
-                nextMotion=getNextMotionTime(1);
                 r=1;
                 } // recover
             else {r=1;}
@@ -237,6 +239,13 @@ int checkForHeld(int s) {
         r=s;
     }
     return r;
+}
+
+int takeAction(int s) {
+  // use probabilities
+  if (random(0,10001)<=motionProbability[s]) {
+    movement(s);
+  }
 }
 
 int movement(int s) {
@@ -264,9 +273,6 @@ int movement(int s) {
         recover();
         state=1;
     }
-    
-    nextMotion=getNextMotionTime(s);
-    
 }
 
 float adjustedSpeedFactor(int s) {
@@ -289,14 +295,14 @@ int calibrateExtremes(int s, float intensity) {
     //get statePosRange for the max and min, and bias towards more frequent extremes depending on intensity
     int min=statePosRange[(s-1)*2];
     int max=statePosRange[(s-1)*2+1];
-    
+
     int range=(max-min);
     int midRange[2]={min+range/4,max-range/4};
     int lowRange[2]={min,min+range/4};
     int highRange[2]={max-range/4,max};
-    
+
     int amp;
-    
+
     // get randoms
     // bias by intensity by getting a random between 0 and intensity*100.
     int r=random(0,120);
@@ -367,23 +373,28 @@ int calibrateBias(int s,float intensity) {
 
 void recover() {
     // shake head
-    accelerate("s0,120,0.1");
-    accelerate("s0,60,0.1");
-    accelerate("s0,120,0.1");
-    accelerate("s0,90,0.1");
-    accelerate("s2,90,0.3");
-    accelerate("s1,90,0.5");
+    accelerate("s0,120,1.8");
+    accelerate("s0,60,1.2");
+    accelerate("s0,120,1.2");
+    accelerate("s0,90,1.4");
+    accelerate("s2,90,1.5");
+    accelerate("s1,90,1.5");
     millisAtStateChange=millis();
     lastMonitor=millis();
 }
 
-void cry(int s) {
-    if (random(0,101)<=soundProbability[1]) {
+void setCry(int s, int onoff) {
+  if (onoff==1) { // turning on
+    if (random(0,10001)<=soundProbability[1]) {
         digitalWrite(soundPins[s],LOW);
     }
     else {
         digitalWrite(soundPins[s],HIGH);
     }
+  }
+  else {  // turning off
+    digitalWrite(soundPins[s],HIGH);
+  }
 }
 
 void undulate(float intensity) {
@@ -391,31 +402,33 @@ void undulate(float intensity) {
     // sometimes move your middle servo back and forth and then your head servo or tail servo back and forth
     // always back and forth
     // very very infrequent
-        
-    int servo=calibrateBias(1,intensity);
-    int speedFactor=1.5;
-    
-    cry(1);
 
-    if (random(0,101)<stateFrequencies[1]) {
-        accelerate("s1,60"+String(speedFactor));
-        accelerate("s1,120"+String(speedFactor));
+    int servo=calibrateBias(1,intensity);
+    float speedFactor=1.5;
+
+    if (random(0,6001)<stateFrequencies[1]) {
+      //also yell
+      setCry(1,1);
+        accelerate("s1,60,"+String(speedFactor));
+        accelerate("s1,120,"+String(speedFactor));
+      setCry(1,0);
     }
     else {
         // nothing here
     }
-    
+
 }
 
 void twitch(float intensity) {
-    
+
     int servo=calibrateBias(2,intensity);
     int amplitude=calibrateExtremes(2,intensity);
     int speedFactor=calibrateSpeedFactor(2,intensity);
-    cry(2);
     if (random(0,101)<stateFrequencies[2]) {
+      setCry(2,1);
         accelerate("s"+String(servo)+","+String(amplitude)+","+String(speedFactor));
         accelerate("s"+String(servo)+","+String(180-amplitude)+","+String(speedFactor));
+        setCry(2,0);
     }
     else {
         // nothing here
@@ -425,14 +438,13 @@ void twitch(float intensity) {
 void squirm(float intensity) {
     // bias towards front twitches (servo 0 and 1, bias 4), sometimes don't squirm
     int servo=calibrateBias(2, intensity);
-    
+
     // get amplitude
     int amplitude=calibrateExtremes(2,intensity);
-    
+
     // also increase speedFactor by intensity
     int speedFactor=calibrateSpeedFactor(2,intensity);
-    
-    cry(2);
+
     if (random(0,101)<=soundProbability[2]) {
         digitalWrite(soundPins[2],LOW);
         delay(100);
@@ -440,25 +452,25 @@ void squirm(float intensity) {
     }
     // sometimes it shouldn't move. This is based off of the x/10 frequency.
     if (random(0,101)<stateFrequencies[2]) {
+      setCry(2,1);
         accelerate("s"+String(servo)+","+String(amplitude)+","+String(speedFactor));
+        setCry(2,0);
     }
     else {
         // nothing here
     }
-    
+
 }
 
 void flail(float intensity) {
     // bias towards front twitches (servo 0 and 1, bias 4), sometimes don't squirm
     int servo=calibrateBias(3, intensity);
-    
+
     // get amplitude
     int amplitude=calibrateExtremes(3,intensity);
     // also increase speedFactor by intensity
     int speedFactor=calibrateSpeedFactor(3,intensity);
-    
-    cry(3);
-    
+
     // sometimes it shouldn't move. This is based off of the x/10 frequency.
     if (random(0,101)<stateFrequencies[3]) {
         accelerate("s"+String(servo)+","+String(amplitude)+","+String(speedFactor));
@@ -466,13 +478,13 @@ void flail(float intensity) {
     else {
         // nothing here
     }
-    
+
 }
 
 void deathThroes() {
     // bias towards front twitches (servo 0 and 1, bias 4), sometimes don't squirm
     int servo=calibrateBias(4, 0.80);
-    
+
     // calculate most extreme
     int randomServo=random(0,3);
     int extreme;
@@ -485,9 +497,7 @@ void deathThroes() {
     else if (randomServo==2) {
         extreme=abs(s2angle[0]-random(100,180));
     }
-    
-    cry(4);
-    
+
     // sometimes it shouldn't move. This is based off of the x/10 frequency.
     if (random(0,101)<stateFrequencies[4]) {
         linear("s"+String(servo)+","+String(extreme));
@@ -500,19 +510,19 @@ void deathThroes() {
 int randomPerlin(int perlin, int min, int max, int variance){
 
     perlin += variance - 10*random(0,(max-min)/20+1);
-    
+
     if(perlin < min){perlin = min;}
     else if (perlin > max){perlin = max;}
-    
+
     return perlin;
 
 }
 
 
 int accelerate(String command) {
-    
+
     Serial.println(command);
-    
+
     char inputStr[64];
     command.toCharArray(inputStr,64);
     char *p = strtok(inputStr,",");
@@ -521,7 +531,7 @@ int accelerate(String command) {
     int angle = atoi(p);
     p = strtok(NULL,",");
     float speedFactor = atof(p);
-    
+
     // Serial.print("servo: ");
     // Serial.println(servo);
     // Serial.print("angle: ");
@@ -530,7 +540,7 @@ int accelerate(String command) {
     // Serial.println(String(s0angle[1])+"  "+String(s1angle[1])+"  "+String(s2angle[1]));
     // Serial.print("speedFactor: ");
     // Serial.println(speedFactor);
-    
+
     if (servo=="s0") {
         accelWrite(s0,angle,s0angle[0],speedFactor);
         s0angle[1]=s0angle[0];
@@ -538,7 +548,7 @@ int accelerate(String command) {
         lastServo=0;
         return angle;
     }
-    
+
     else if (servo=="s1") {
         accelWrite(s1,angle,s1angle[0],speedFactor);
         s1angle[1]=s1angle[0];
@@ -546,7 +556,7 @@ int accelerate(String command) {
         lastServo=1;
         return angle;
     }
-    
+
     else if (servo=="s2") {
         accelWrite(s2,angle,s2angle[0],speedFactor);
         s2angle[1]=s2angle[0];
@@ -554,7 +564,7 @@ int accelerate(String command) {
         lastServo=2;
         return angle;
     }
-    
+
     else {
         return -1;
     }
@@ -568,7 +578,7 @@ int linear(String command) {
     String servo = p;
     p = strtok(NULL,",");
     int angle = atoi(p);
-    
+
     if (servo=="s0") {
         s0.write(angle);
         s0angle[1]=s0angle[0];
@@ -576,7 +586,7 @@ int linear(String command) {
         lastServo=0;
         return angle;
     }
-    
+
     else if (servo=="s1") {
         s1.write(angle);
         s1angle[1]=s1angle[0];
@@ -584,7 +594,7 @@ int linear(String command) {
         lastServo=1;
         return angle;
     }
-    
+
     else if (servo=="s2") {
         s2.write(angle);
         s2angle[1]=s2angle[0];
@@ -592,11 +602,11 @@ int linear(String command) {
         lastServo=2;
         return angle;
     }
-    
+
     else {
         return -1;
     }
-    
+
 }
 
 void accelWrite(Servo servo, int angle, int lastAngle, float speedFactor) {
