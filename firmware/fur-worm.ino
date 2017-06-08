@@ -1,5 +1,4 @@
 #include "math.h"
-
 // switch to time as a determinant instead of pressure
 
 // servo definitions
@@ -29,7 +28,7 @@ int lastServo=0;
 int ampPerlin;  // amplitude
 int servoPerlin;    // servo
 
-int squeezed=300;   // the minimum before it is decided that you are squeezing it
+int squeezed=10;   // the minimum before it is decided that you are squeezing it
 int millisAtStateChange=0;
 
 int state=0;
@@ -53,7 +52,7 @@ int stateThresholds[5]={
 };
 
 // servo position mins and maxes by state
-int statePosRange[8] {
+int statePosRange[8]={
     80,
     100,
     60,
@@ -66,7 +65,7 @@ int statePosRange[8] {
 
 // speedFactor mins and maxes by state
 // being linear, state 7 (death throes) has no speed range
-float stateSpeedRange[6] {
+float stateSpeedRange[6]={
     2.0,
     1.5,
     2.0,
@@ -76,7 +75,7 @@ float stateSpeedRange[6] {
 };
 
 // frequencies by state
-int stateFrequencies[5] {
+int stateFrequencies[5]={
     0,
     1,
     50,
@@ -89,7 +88,7 @@ int stateFrequencies[5] {
 // 3: none
 // 4: head and center
 // 5: tail and center
-int stateServoBias[5] {
+int stateServoBias[5]={
     0,
     4,
     3,
@@ -100,7 +99,7 @@ int stateServoBias[5] {
 
 // sound probability (out of 10000 (10 seconds))
 // if below, pin low. If above, pin high.
-int soundProbability[5] {
+int soundProbability[5]={
     0,
     5000,
     9000,
@@ -110,14 +109,30 @@ int soundProbability[5] {
 
 
 // this should be the likelihood of motion, out of 10000 (10 seconds)
-int motionProbability[5] {
+int motionProbability[5]={
   10000,  // always
   1, // once every 10 seconds
-  500,  // ten times a second
-  1000, // 100 times a second
-  8000 // frequently
+  1000,  // 100 times a second
+  2000, // 200 times a second
+  9500 // frequently
 };
 
+int servoAvailability[3]={1,1,1};
+
+// servo availability timers
+Timer setServo0Timeout(50,set0Available,true);
+Timer setServo1Timeout(50,set1Available,true);
+Timer setServo2Timeout(50,set2Available,true);
+
+void set0Available() {
+  servoAvailability[0]=1;
+}
+void set1Available() {
+  servoAvailability[1]=1;
+}
+void set2Available() {
+  servoAvailability[2]=1;
+}
 
 void setup() {
     // activate all servos
@@ -164,7 +179,7 @@ void loop() {
     // Serial.println("Got sense: "+String(sense));
 
     int newState=checkForHeld(state);
-    // Serial.println("Sense: "+String(sense));
+    Serial.println("Sense: "+String(sense));
     // Serial.println("New State: " + String(newState));
 
     if (newState!=state) {
@@ -207,6 +222,14 @@ void loop() {
 
 }
 
+void silenceCries() {
+  setCry(0,0);
+  setCry(1,0);
+  setCry(2,0);
+  setCry(3,0);
+  setCry(4,0);
+}
+
 int checkForHeld(int s) {
     int t=millis();
     int r=-1;
@@ -235,7 +258,7 @@ int checkForHeld(int s) {
     }
     else {
         // add to average
-        senseAvg=(sense+3*senseAvg)/4;  // bias this average
+        senseAvg=(sense+9*senseAvg)/10;  // bias this average
         r=s;
     }
     return r;
@@ -244,6 +267,8 @@ int checkForHeld(int s) {
 int takeAction(int s) {
   // use probabilities
   if (random(0,10001)<=motionProbability[s]) {
+    // check to make sure motion is finished
+
     movement(s);
   }
 }
@@ -267,7 +292,8 @@ int movement(int s) {
         flail(intensity);
     }
     else if (s==4) {
-        deathThroes();
+        flail(intensity);
+        // deathThroes();
     }
     else if (s==0) {
         recover();
@@ -373,14 +399,12 @@ int calibrateBias(int s,float intensity) {
 
 void recover() {
     // shake head
-    accelerate("s0,120,1.8");
-    accelerate("s0,60,1.2");
-    accelerate("s0,120,1.2");
     accelerate("s0,90,1.4");
     accelerate("s2,90,1.5");
     accelerate("s1,90,1.5");
     millisAtStateChange=millis();
     lastMonitor=millis();
+    silenceCries();
 }
 
 void setCry(int s, int onoff) {
@@ -405,12 +429,14 @@ void undulate(float intensity) {
 
     int servo=calibrateBias(1,intensity);
     float speedFactor=1.5;
+    int angle;
+    if (s0angle[0]==60) {angle=120;}
+    else {angle=60;}
 
     if (random(0,6001)<stateFrequencies[1]) {
       //also yell
       setCry(1,1);
-        accelerate("s1,60,"+String(speedFactor));
-        accelerate("s1,120,"+String(speedFactor));
+      accelerate("s1,"+String(angle)+","+String(speedFactor));
       setCry(1,0);
     }
     else {
@@ -418,6 +444,7 @@ void undulate(float intensity) {
     }
 
 }
+
 
 void twitch(float intensity) {
 
@@ -518,6 +545,9 @@ int randomPerlin(int perlin, int min, int max, int variance){
 
 }
 
+void setAvailable(int x) {
+  servoAvailability[x]=1;
+}
 
 int accelerate(String command) {
 
@@ -532,37 +562,51 @@ int accelerate(String command) {
     p = strtok(NULL,",");
     float speedFactor = atof(p);
 
-    // Serial.print("servo: ");
-    // Serial.println(servo);
-    // Serial.print("angle: ");
-    // Serial.println(angle);
-    // Serial.print("last angles: ");
-    // Serial.println(String(s0angle[1])+"  "+String(s1angle[1])+"  "+String(s2angle[1]));
-    // Serial.print("speedFactor: ");
-    // Serial.println(speedFactor);
+    /*p = strtok(NULL,",");
+    int delay=atoi(p);*/
+
+    // build in delay here?
 
     if (servo=="s0") {
+      if (servoAvailability[0]==1) {
+        servoAvailability[0]=0;
+        setServo0Timeout.changePeriod(speedFactor*10*(angle-s0angle[0]));
+        setServo0Timeout.start();
         accelWrite(s0,angle,s0angle[0],speedFactor);
         s0angle[1]=s0angle[0];
         s0angle[0]=angle;
         lastServo=0;
         return angle;
+      }
+      else {return -1;}
     }
 
     else if (servo=="s1") {
+      if (servoAvailability[1]==1) {
+        servoAvailability[1]=0;
+        setServo1Timeout.changePeriod(speedFactor*10*(angle-s1angle[0]));
+        setServo1Timeout.start();
         accelWrite(s1,angle,s1angle[0],speedFactor);
         s1angle[1]=s1angle[0];
         s1angle[0]=angle;
         lastServo=1;
         return angle;
+      }
+      else {return -1;}
     }
 
     else if (servo=="s2") {
+      if (servoAvailability[2]==1) {
+        servoAvailability[2]=0;
+        setServo2Timeout.changePeriod(speedFactor*10*(angle-s2angle[0]));
+        setServo2Timeout.start();
         accelWrite(s2,angle,s2angle[0],speedFactor);
         s2angle[1]=s2angle[0];
         s2angle[0]=angle;
         lastServo=2;
         return angle;
+      }
+      else {return -1;}
     }
 
     else {
@@ -578,35 +622,51 @@ int linear(String command) {
     String servo = p;
     p = strtok(NULL,",");
     int angle = atoi(p);
-
     if (servo=="s0") {
+      if (servoAvailability[0]==1) {
+        servoAvailability[0]=0;
+        setServo0Timeout.changePeriod((angle-s0angle[0]));
+        setServo0Timeout.start();
         s0.write(angle);
         s0angle[1]=s0angle[0];
         s0angle[0]=angle;
         lastServo=0;
         return angle;
+      }
+      else {return -1;}
     }
 
     else if (servo=="s1") {
+      if (servoAvailability[1]==1) {
+        servoAvailability[1]=0;
+        setServo1Timeout.changePeriod((angle-s1angle[0]));
+        setServo1Timeout.start();
         s1.write(angle);
         s1angle[1]=s1angle[0];
         s1angle[0]=angle;
         lastServo=1;
         return angle;
+      }
+      else {return -1;}
     }
 
     else if (servo=="s2") {
+      if (servoAvailability[2]==1) {
+        servoAvailability[2]=0;
+        setServo2Timeout.changePeriod((angle-s2angle[0]));
+        setServo2Timeout.start();
         s2.write(angle);
         s2angle[1]=s2angle[0];
         s2angle[0]=angle;
         lastServo=2;
         return angle;
+      }
+      else {return -1;}
     }
 
     else {
         return -1;
     }
-
 }
 
 void accelWrite(Servo servo, int angle, int lastAngle, float speedFactor) {
