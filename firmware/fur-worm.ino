@@ -1,3 +1,5 @@
+SYSTEM_MODE(SEMI_AUTOMATIC);
+
 #include "math.h"
 // switch to time as a determinant instead of pressure
 
@@ -28,7 +30,7 @@ int lastServo=0;
 int ampPerlin;  // amplitude
 int servoPerlin;    // servo
 
-int squeezed=10;   // the minimum before it is decided that you are squeezing it
+int squeezed=500;   // the minimum before it is decided that you are squeezing it
 int millisAtStateChange=0;
 
 int state=0;
@@ -46,7 +48,7 @@ int lastMonitor=0;
 int stateThresholds[5]={
     300,
     300,
-    8000,
+    3000,
     9000,
     10000
 };
@@ -55,8 +57,8 @@ int stateThresholds[5]={
 int statePosRange[8]={
     80,
     100,
-    60,
-    120,
+    0,
+    180,
     40,
     140,
     0,
@@ -68,19 +70,10 @@ int statePosRange[8]={
 float stateSpeedRange[6]={
     2.0,
     1.5,
-    2.0,
-    1.0,
+    1.5,
+    1.2,
+    1.2,
     0.5,
-    0.1,
-};
-
-// frequencies by state
-int stateFrequencies[5]={
-    0,
-    1,
-    50,
-    80,
-    100
 };
 
 // bias by state:
@@ -102,7 +95,7 @@ int stateServoBias[5]={
 int soundProbability[5]={
     0,
     5000,
-    9000,
+    8000,
     8000, // these don't count since they will be on always
     10000
 };
@@ -111,9 +104,9 @@ int soundProbability[5]={
 // this should be the likelihood of motion, out of 10000 (10 seconds)
 int motionProbability[5]={
   10000,  // always
-  1, // once every 10 seconds
-  1000,  // 100 times a second
-  2000, // 200 times a second
+  50, // 5x/second
+  500,  // 50 times a second
+  1000, // 100 times a second
   9500 // frequently
 };
 
@@ -123,6 +116,8 @@ int servoAvailability[3]={1,1,1};
 Timer setServo0Timeout(50,set0Available,true);
 Timer setServo1Timeout(50,set1Available,true);
 Timer setServo2Timeout(50,set2Available,true);
+Timer setCry1Timeout(100,silence1,true);
+Timer setCry2Timeout(100,silence2,true);
 
 void set0Available() {
   servoAvailability[0]=1;
@@ -132,6 +127,14 @@ void set1Available() {
 }
 void set2Available() {
   servoAvailability[2]=1;
+}
+
+void silence1() {
+  setCry(1,0);
+}
+
+void silence2() {
+  setCry(2,0);
 }
 
 void setup() {
@@ -289,7 +292,7 @@ int movement(int s) {
         twitch(intensity);
     }
     else if (s==3) {
-        flail(intensity);
+        squirm(intensity);
     }
     else if (s==4) {
         flail(intensity);
@@ -430,19 +433,25 @@ void undulate(float intensity) {
     int servo=calibrateBias(1,intensity);
     float speedFactor=1.5;
     int angle;
-    if (s0angle[0]==60) {angle=120;}
-    else {angle=60;}
+    // random servo
+    if (servo==0) {
+      if (s0angle[0]==60) {angle=120;}
+      else {angle=60;}
+    }
+    else if (servo==1) {
+      if (s1angle[1]==60) {angle=120;}
+      else {angle=60;}
+    }
+    else if (servo==2) {
+      if (s2angle[2]==60) {angle=120;}
+      else {angle=60;}
+    }
 
-    if (random(0,6001)<stateFrequencies[1]) {
+
       //also yell
+      accelerate("s"+String(servo)+","+String(angle)+","+String(speedFactor));
       setCry(1,1);
-      accelerate("s1,"+String(angle)+","+String(speedFactor));
-      setCry(1,0);
-    }
-    else {
-        // nothing here
-    }
-
+      setCry1Timeout.start();
 }
 
 
@@ -451,15 +460,10 @@ void twitch(float intensity) {
     int servo=calibrateBias(2,intensity);
     int amplitude=calibrateExtremes(2,intensity);
     int speedFactor=calibrateSpeedFactor(2,intensity);
-    if (random(0,101)<stateFrequencies[2]) {
-      setCry(2,1);
+      setCry2Timeout.changePeriod(intensity*100);
+        setCry2Timeout.start();
         accelerate("s"+String(servo)+","+String(amplitude)+","+String(speedFactor));
         accelerate("s"+String(servo)+","+String(180-amplitude)+","+String(speedFactor));
-        setCry(2,0);
-    }
-    else {
-        // nothing here
-    }
 }
 
 void squirm(float intensity) {
@@ -472,21 +476,10 @@ void squirm(float intensity) {
     // also increase speedFactor by intensity
     int speedFactor=calibrateSpeedFactor(2,intensity);
 
-    if (random(0,101)<=soundProbability[2]) {
-        digitalWrite(soundPins[2],LOW);
-        delay(100);
-        digitalWrite(soundPins[2],HIGH);
+    if (random(0,10001)<=soundProbability[2]) {
+        setCry2Timeout.start();
     }
-    // sometimes it shouldn't move. This is based off of the x/10 frequency.
-    if (random(0,101)<stateFrequencies[2]) {
-      setCry(2,1);
         accelerate("s"+String(servo)+","+String(amplitude)+","+String(speedFactor));
-        setCry(2,0);
-    }
-    else {
-        // nothing here
-    }
-
 }
 
 void flail(float intensity) {
@@ -499,12 +492,7 @@ void flail(float intensity) {
     int speedFactor=calibrateSpeedFactor(3,intensity);
 
     // sometimes it shouldn't move. This is based off of the x/10 frequency.
-    if (random(0,101)<stateFrequencies[3]) {
         accelerate("s"+String(servo)+","+String(amplitude)+","+String(speedFactor));
-    }
-    else {
-        // nothing here
-    }
 
 }
 
@@ -526,12 +514,7 @@ void deathThroes() {
     }
 
     // sometimes it shouldn't move. This is based off of the x/10 frequency.
-    if (random(0,101)<stateFrequencies[4]) {
         linear("s"+String(servo)+","+String(extreme));
-    }
-    else {
-        // nothing here
-    }
 }
 
 int randomPerlin(int perlin, int min, int max, int variance){
