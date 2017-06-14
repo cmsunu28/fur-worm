@@ -49,8 +49,8 @@ int stateThresholds[5]={
     300,
     300,
     3000,
-    9000,
-    10000
+    8000,
+    20000
 };
 
 // servo position mins and maxes by state
@@ -207,8 +207,6 @@ void loop() {
       }
       else if (newState==5) {
         setCry(4,0);
-        state=0;
-        System.sleep(120000);
       }
       else {
         state=newState;
