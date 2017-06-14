@@ -295,10 +295,10 @@ int movement(int s) {
         undulate(intensity);
     }
     else if (s==2) {
-        twitch(intensity);
+        squirm(intensity);
     }
     else if (s==3) {
-        squirm(intensity);
+        twitch(intensity);
     }
     else if (s==4) {
         flail(intensity);
@@ -461,19 +461,31 @@ void undulate(float intensity) {
 }
 
 
-void twitch(float intensity) {
+void squirm(float intensity) {
 
     int servo=calibrateBias(2,intensity);
-    int amplitude=calibrateExtremes(2,intensity);
     int speedFactor=calibrateSpeedFactor(2,intensity);
+    int angle;
+    // random servo
+    if (servo==0) {
+      if (s0angle[0]==20) {angle=160;}
+      else {angle=20;}
+    }
+    else if (servo==1) {
+      if (s1angle[1]==20) {angle=160;}
+      else {angle=20;}
+    }
+    else if (servo==2) {
+      if (s2angle[2]==20) {angle=160;}
+      else {angle=20;}
+    }
       setCry2Timeout.changePeriod(intensity*100);
       setCry(2,1);
         setCry2Timeout.start();
-        accelerate("s"+String(servo)+","+String(amplitude)+","+String(speedFactor));
-        accelerate("s"+String(servo)+","+String(180-amplitude)+","+String(speedFactor));
+        accelerate("s"+String(servo)+","+String(angle)+","+String(speedFactor));
 }
 
-void squirm(float intensity) {
+void twitch(float intensity) {
     // bias towards front twitches (servo 0 and 1, bias 4), sometimes don't squirm
     int servo=calibrateBias(2, intensity);
 
