@@ -102,11 +102,12 @@ int soundProbability[5]={
 
 
 // this should be the likelihood of motion, out of 10000 (10 seconds)
+// this is before intensity calculation
 int motionProbability[5]={
   10000,  // always
   50, // 5x/second
-  500,  // 50 times a second
-  1000, // 100 times a second
+  6500,  // 50 times a second
+  8000, // 100 times a second
   9500 // frequently
 };
 
@@ -269,9 +270,14 @@ int checkForHeld(int s) {
 
 int takeAction(int s) {
   // use probabilities
-  if (random(0,10001)<=motionProbability[s]) {
-    // check to make sure motion is finished
-
+  // grant greater likelihood to greater intensity
+  int t=millis()-millisAtStateChange;
+  float intensity=(float)t/(float)stateThresholds[s];
+  int max=10001;
+  if (s>1) {
+    max=10001-intensity*5000;
+  }
+  if (random(0,max)<=motionProbability[s]) {
     movement(s);
   }
 }
@@ -461,6 +467,7 @@ void twitch(float intensity) {
     int amplitude=calibrateExtremes(2,intensity);
     int speedFactor=calibrateSpeedFactor(2,intensity);
       setCry2Timeout.changePeriod(intensity*100);
+      setCry(2,1);
         setCry2Timeout.start();
         accelerate("s"+String(servo)+","+String(amplitude)+","+String(speedFactor));
         accelerate("s"+String(servo)+","+String(180-amplitude)+","+String(speedFactor));
@@ -477,6 +484,7 @@ void squirm(float intensity) {
     int speedFactor=calibrateSpeedFactor(2,intensity);
 
     if (random(0,10001)<=soundProbability[2]) {
+      setCry(2,1);
         setCry2Timeout.start();
     }
         accelerate("s"+String(servo)+","+String(amplitude)+","+String(speedFactor));
