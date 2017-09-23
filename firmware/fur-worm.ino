@@ -4,16 +4,17 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 // switch to time as a determinant instead of pressure
 
 // servo definitions
-int s0pin=A5;
-int s1pin=RX;
-int s2pin=TX;
+int s0pin=D0;
+int s1pin=D1;
+int s2pin=D2;
 
 int powerPin=A3;
-int skinPin=A0;
+int skinPin=B4;
+// int skinPins[5]={B4,B5,A0,A1,A2};
 int sense;  // the feedback from skinPin
 int senseAvg;
 
-int soundPins[5]={D0,D1,D2,D3,D4};
+int soundPins[5]={C0,C1,C2,C3,D4};
 
 Servo s0;   // head
 Servo s1;   // mid
@@ -30,7 +31,7 @@ int lastServo=0;
 int ampPerlin;  // amplitude
 int servoPerlin;    // servo
 
-int squeezed=500;   // the minimum before it is decided that you are squeezing it
+int squeezed=120;   // the minimum before it is decided that you are squeezing it
 int millisAtStateChange=0;
 
 int state=0;
@@ -178,7 +179,7 @@ void setup() {
 
 void loop() {
 
-    sense = 3824-analogRead(skinPin);
+    sense = analogRead(skinPin);
 
     // Serial.println("Got sense: "+String(sense));
 
