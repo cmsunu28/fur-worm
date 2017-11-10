@@ -9,12 +9,40 @@ int s1pin=D1;
 int s2pin=D2;
 
 int powerPin=A3;
-int skinPin=B4;
-// int skinPins[5]={B4,B5,A0,A1,A2};
+// int skinPin=B4;
+int faceT=B2;
+int faceL=B3;
+int faceR=B4;
+int rib1L=B5;
+int rib1R=A0;
+int midT=A1;
+int rib2L=A2;
+int rib2R=A3;
+int tailT=A4;
+
+int readsTop[3];
+int readsTopLast[3];
+int readsLeft[3];
+int readsLeftLast[3];
+int readsRight[3];
+int readsRightLast[3];
+
+int vertebralVals[3]; // values by vertebral segment
+int tlrVals[3]; // longitudinal values (top, left, and right)
+
+int petThresholdTop[3]={17,17,17};
+int petThresholdLeft[3]={17,17,17};
+int petThresholdRight[3]={17,17,17};
+
+int valFaceT;
+int valFaceL;
+int valFaceR;
+int valTailT;
+
 int sense;  // the feedback from skinPin
 int senseAvg;
 
-int soundPins[5]={C0,C1,C2,C3,D4};
+int soundPins[5]={D4,C3,C2,C1,C0};
 
 Servo s0;   // head
 Servo s1;   // mid
@@ -148,9 +176,6 @@ void setup() {
     s1.attach(s1pin);
     s2.attach(s2pin);
 
-    // activate fsr or fabric
-    pinMode(skinPin,INPUT_PULLDOWN);
-
     // power pin
     pinMode(powerPin,OUTPUT);
     digitalWrite(powerPin,HIGH);
@@ -179,7 +204,8 @@ void setup() {
 
 void loop() {
 
-    sense = analogRead(skinPin);
+    // sense = analogRead(skinPin);
+    readNerves();
 
     // Serial.println("Got sense: "+String(sense));
 
@@ -231,6 +257,84 @@ void silenceCries() {
   setCry(2,0);
   setCry(3,0);
   setCry(4,0);
+}
+
+void readNerves() {
+  // read each nerve, put into an array representing the body:
+  readsTop[0]=analogRead(faceT)*.2+.8*readsTopLast[0];
+  readsTop[1]=analogRead(midT)*.2+.8*readsTopLast[1];
+  readsTop[2]=analogRead(tailT)*.2+.8*readsTopLast[2];
+  readsLeft[0]=analogRead(faceL)*.2+.8*readsLeftLast[0];
+  readsLeft[1]=analogRead(rib1L)*.2+.8*readsLeftLast[1];
+  readsLeft[2]=analogRead(rib2L)*.2+.8*readsLeftLast[0];
+  readsRight[0]=analogRead(faceR)*.2+.8*readsRightLast[0];
+  readsRight[1]=analogRead(rib1R)*.2+.8*readsRightLast[0];
+  readsRight[2]=analogRead(rib2R)*.2+.8*readsRightLast[0];
+
+  // readsLeft=[analogRead(faceT),analogRead(midT),analogRead(tailT)];
+  // readsLeft=[analogRead(faceL),analogRead(rib1L),analogRead(rib2L)];
+  // readsRight=[analogRead(faceR),analogRead(rib1R),analogRead(rib2R)];
+
+  Serial.print(readsTop[0]); Serial.print("  ");
+  Serial.print(readsTop[1]); Serial.print("  ");
+  Serial.print(readsTop[2]); Serial.print(" || ");
+  Serial.print(readsLeft[0]); Serial.print("  ");
+  Serial.print(readsLeft[1]); Serial.print("  ");
+  Serial.print(readsLeft[2]); Serial.print(" || ");
+  Serial.print(readsRight[0]); Serial.print("  ");
+  Serial.print(readsRight[1]); Serial.print("  ");
+  Serial.print(readsRight[2]); Serial.println();
+
+  int valTop[3]={readsTop[0]>petThresholdTop[0],readsTop[1]>petThresholdTop[1], readsTop[2]>petThresholdTop[2]};
+  int valLeft[3]={readsLeft[0]>petThresholdLeft[0],readsLeft[1]>petThresholdLeft[1], readsLeft[2]>petThresholdLeft[2]};
+  int valRight[3]={readsRight[0]>petThresholdRight[0],readsRight[1]>petThresholdRight[1], readsRight[2]>petThresholdRight[2]};
+
+  vertebralVals[0]=valTop[0]+valLeft[0]+valRight[0];
+  vertebralVals[1]=valTop[1]+valLeft[1]+valRight[1];
+  vertebralVals[2]=valTop[2]+valLeft[2]+valRight[2];
+  tlrVals[0] = valTop[0]+valTop[1]+valTop[2];
+  tlrVals[1]=valLeft[0]+valLeft[1]+valLeft[2];
+  tlrVals[2]=valRight[0]+valRight[1]+valRight[2];
+
+  readsTopLast[0]=readsTop[0];
+  readsTopLast[1]=readsTop[1];
+  readsTopLast[2]=readsTop[2];
+  readsLeftLast[0]=readsLeft[0];
+  readsLeftLast[1]=readsLeft[1];
+  readsLeftLast[2]=readsLeft[2];
+  readsRightLast[0]=readsRight[0];
+  readsRightLast[1]=readsRight[1];
+  readsRightLast[2]=readsRight[2];
+
+}
+
+void react() {
+  // check for constriction: vertebral vals at 3
+  if (vertebralVals[0]==3) {
+    // head is constricted, twitch tail
+    Serial.println("Head is constricted!");
+  }
+  else if (vertebralVals[1]==3) {
+    // midsection constricted, twitch head and tail
+  }
+  else if (vertebralVals[2]==3) {
+    // tail constricted, twitch head
+  }
+
+  // check for sidedness: one side of nerves pushed at once
+  if (tlrVals[0]==1) {
+    // this should probably check the logs for the last times that this was 1, and determine if you are being petted.
+  }
+  else {
+    if (tlrVals[1]>=1) {
+      // twitch to the right
+    }
+    if (tlrVals[2]>=1) {
+      // twitch to the left
+    }
+    // this should mean that you actually do all of these
+  }
+
 }
 
 int checkForHeld(int s) {
