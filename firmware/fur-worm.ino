@@ -10,10 +10,8 @@ int s2pin=D2;
 
 int powerPin=A3;
 
-int facePins[3]={B4,A1,A4};
-// int faceL=A1;
-// int faceR=A4;
-// int faceT=B4;
+int nervePins[3]={B4,A1,A4};
+// faceL=A1; faceR=A4; faceT=B4;
 
 /*
 Potential pins for sensing include:
@@ -28,23 +26,20 @@ A3;
 A4;
 */
 
-int faceReads[3];
-int faceReadsLast[3];
+int nerveReads[3];
+int nerveReadsLast[3];
 
-int faceReadsAvg[3];
+int nerveReadsAvg[3];
 
-// if not using percents, set to 1.0
-float percentagePet=1; // percent of average that reads must be to assume petting
-float percentagePain=1; // percent of average that reads must be to assume pain
 
-// if not using diffs, set to 0
-int petDiff=10;
-int painDiff=20;
+int petDiffOriginal[3]={10,10,10};
+int painDiffOriginal[3]={20,20,20};
 
-int petThresholdFace[3];
-int painThresholdFace[3];
-int petCounterFace[3]={0,0,0};
-int painCounterFace[3]={0,0,0};
+int petDiff[3]={10,10,10};
+int painDiff[3]={20,20,20};
+
+int petCounter[3]={0,0,0};
+int painCounter[3]={0,0,0};
 
 int soundPins[5]={D4,C3,C2,C1,C0};
 
@@ -147,10 +142,17 @@ void setup() {
 void loop() {
 
     readNerves();
-    react();
-    checkAverages(0);
-    checkAverages(1);
-    checkAverages(2);
+    processImpulses(0);
+    processImpulses(1);
+    processImpulses(2);
+
+    parseCounters(petCounter[0],painCounter[0],0);
+    parseCounters(petCounter[1],painCounter[1],1);
+    parseCounters(petCounter[2],painCounter[2],2);
+
+    decayThreshold(0);
+    decayThreshold(1);
+    decayThreshold(2);
 
     // thinky-looking delay
     delay(10);
@@ -158,30 +160,33 @@ void loop() {
 }
 
 void calibrate() {
-  faceReadsAvg[0]=analogRead(facePins[0]);
-  faceReadsAvg[1]=analogRead(facePins[1]);
-  faceReadsAvg[2]=analogRead(facePins[2]);
+
+  nerveReadsAvg[0]=analogRead(nervePins[0]);
+  nerveReadsAvg[1]=analogRead(nervePins[1]);
+  nerveReadsAvg[2]=analogRead(nervePins[2]);
   // take reads for 3 seconds
   int timer=0;
-  while (timer<5000) {
-    faceReadsAvg[0]=(faceReadsAvg[0]+analogRead(facePins[0]))/2;
-    faceReadsAvg[1]=(faceReadsAvg[1]+analogRead(facePins[1]))/2;
-    faceReadsAvg[2]=(faceReadsAvg[2]+analogRead(facePins[2]))/2;
+
+   while (timer<1000) {
+    nerveReadsAvg[0]=(nerveReadsAvg[0]+analogRead(nervePins[0]))/2;
+    nerveReadsAvg[1]=(nerveReadsAvg[1]+analogRead(nervePins[1]))/2;
+    nerveReadsAvg[2]=(nerveReadsAvg[2]+analogRead(nervePins[2]))/2;
     timer++;
   }
-  petThresholdFace[0]=petDiff+percentagePet*faceReadsAvg[0];
-  petThresholdFace[1]=petDiff+percentagePet*faceReadsAvg[1];
-  petThresholdFace[2]=petDiff+percentagePet*faceReadsAvg[2];
-
-  painThresholdFace[0]=painDiff+percentagePain*faceReadsAvg[0];
-  painThresholdFace[1]=painDiff+percentagePain*faceReadsAvg[1];
-  painThresholdFace[2]=painDiff+percentagePain*faceReadsAvg[2];
 
   Serial.println("-------------Calbirated-------------");
-  Serial.println("avg: "+String(faceReadsAvg[0])+","+String(faceReadsAvg[1])+","+String(faceReadsAvg[2]));
-  Serial.println("pet: "+String(petThresholdFace[0])+","+String(petThresholdFace[1])+","+String(petThresholdFace[2]));
-  Serial.println("pain: "+String(painThresholdFace[0])+","+String(painThresholdFace[1])+","+String(painThresholdFace[2]));
+  Serial.println("avg: "+String(nerveReadsAvg[0])+","+String(nerveReadsAvg[1])+","+String(nerveReadsAvg[2]));
   delay(1000);
+
+}
+
+void decayThreshold(int p) {
+  if (painDiff[p]>painDiffOriginal[p]*10) {
+    painDiff[p]=floor(lowerLinear(painDiff[p],painDiffOriginal[p],1,0),2*painDiffOriginal[p]);
+  }
+  if (petDiff[p]>petDiffOriginal[p]*10) {
+    petDiff[p]=floor(lowerLinear(petDiff[p],petDiffOriginal[p],1,0),2*petDiffOriginal[p]);
+  }
 }
 
 void silenceCries() {
@@ -194,160 +199,197 @@ void silenceCries() {
 
 void readNerves() {
 
-  //cleanup from last time:
-  faceReadsLast[0]=faceReads[0];
-  faceReadsLast[1]=faceReads[1];
-  faceReadsLast[2]=faceReads[2];
+  // cleanup from last time:
+  nerveReadsLast[0]=nerveReads[0];
+  nerveReadsLast[1]=nerveReads[1];
+  nerveReadsLast[2]=nerveReads[2];
 
   // read each nerve, put into an array representing the body:
 
-  faceReads[0]=analogRead(facePins[1])*.2+.8*faceReadsLast[1];
-  faceReads[1]=analogRead(facePins[2])*.2+.8*faceReadsLast[2];
-  faceReads[2]=analogRead(facePins[0])*.2+.8*faceReadsLast[0];
+  nerveReads[0]=readNerve(0);
+  nerveReads[1]=readNerve(1);
+  nerveReads[2]=readNerve(2);
 
-  // Serial.print(faceReads[0]); Serial.print("  ");
-  // Serial.print(faceReads[1]); Serial.print("  ");
-  // Serial.print(faceReads[2]); Serial.println();
-
+  Serial.print(nerveReads[0]); Serial.print("  ");
+  Serial.print(nerveReads[1]); Serial.print("  ");
+  Serial.print(nerveReads[2]); Serial.println();
 }
 
-void checkAverages(int p) {
-  /*
-  // if 150% ('percentagePet') of average, assume petting. otherwise, incorporate into average.
-  if (faceReadsAvg[p]*petPercent<faceReads[p]) {
-    // take more reads to see if it continues to be 150% higher
-    // take the next 5 reads and check for if it is also above
-    int i=0;
-    int tempAvg=(analogRead(facePins[p]));
-    while (i<loopLength) {
-      tempAvg=(analogRead(facePins[p])+tempAvg)/2;
-      i++;
-    }
+int readNerve(int p) {
+  int q=analogRead(nervePins[p])*.2+.8*nerveReadsLast[p];
+  return q;
+}
 
-    // if it is under the pain percent threshold, it is in the pet range
-    if (faceReads[p]<faceReadsAvg[p]*painPercent) {
-      if (faceReadsAvg[p]*petPercent<tempAvg) {
-        // this is a true value
-        petThresholdFace[p]=(faceReads[p]+petThresholdFace[p])/2;
-        faceReads[p]=tempAvg;
-      }
-      else {
-        // this is not a true value, set back to regular avg
-        faceReads[p]=faceReadsAvg[p];
-      }
-    }
-    // if it is above the pain percent threshold, it is in the pain range. check for this.
-    else if (faceReads[p]>=faceReadsAvg[p]*painPercent) {
-      if (faceReadsAvg[p]*painPercent<tempAvg) {
-        // this is a true value
-        painThresholdFace[p]=(faceReads[p]+painThresholdFace[p])/2;
-        faceReads[p]=tempAvg;
-      }
-      else {
-        // not a true value, set back to regular
-        faceReads[p]=faceReadsAvg[p];
-      }
-    }
+int getDiff(int p) {
+  int diff = nerveReads[p]-nerveReadsAvg[p];
+  return diff;
+}
 
+int evaluateDiff(int p, int diff, int threshold) {
+  // evaluates the diff and returns 0 if it is far from the original diff value
+  // evaluate by taking the average for the next X loops
+  int avg=diff;
+
+  avg=averageNextDiffs(p,avg,3);
+  if (avg>threshold) {return 1;}
+  else {return 0;}
+}
+
+int averageNextDiffs(int p, int avg, int loops) {
+  int i=0;
+  int finalAvg=avg;
+  while (i<loops) {
+    finalAvg=((readNerve(p)-finalAvg)+finalAvg)/2;
+    i++;
+  }
+  return finalAvg;
+}
+
+int lowerLinear(int counter, int min, float m, int b) {
+  // linear incr of counter
+  // y=mx
+  // y = amount to add
+  // x=counter
+  // m=slope
+  // b= exponent-- how much is added to begin with
+  // max out at max
+
+  int y;
+  if (counter>=min) {
+    y = floor(m*counter+b, 1);
   }
   else {
-    */
-    // do average as usual
-    petThresholdFace[p]=faceReadsAvg[p]*percentagePet+petDiff;
-    painThresholdFace[p]=faceReadsAvg[p]*percentagePain+painDiff;
-    faceReadsAvg[p]=  0.1*faceReads[p]+0.9*faceReadsAvg[p];
-
-    Serial.print(faceReads[0]); Serial.print(" / "); Serial.print(faceReadsAvg[0]); Serial.print(" / "); Serial.print(petThresholdFace[0]);; Serial.print(" / "); Serial.println(painThresholdFace[0]);
-
-  // }
+    y = 0;
+  }
+  return counter-y;
 
 }
 
-void react() {
+int raiseLinear(int counter, int max, float m, int b) {
 
-  evaluateReads(0);
-  evaluateReads(1);
-  evaluateReads(2);
+  // MODIFY 
 
-  // otherwise, random dice roll for twitching and basic noise.
-  if (faceReads[0]<petThresholdFace[0] && faceReads[1]<petThresholdFace[1] && faceReads[2]<petThresholdFace[2]) {
-    if (!random(0,8000)) {
-      wag(0.25);
+
+  // linear incr of counter
+  // y=mx
+  // y = amount to add
+  // x=counter
+  // m=slope
+  // b= exponent-- how much is added to begin with
+  // max out at max
+
+  int y;
+  if (counter<=max) {
+    y = floor(m*counter+b, 1);
+  }
+  else {
+    y = 0;
+  }
+  return counter+y;
+
+}
+
+int lowerExp(int counter, int min, float a) {
+  // linear incr of counter
+  // y=mx
+  // y = amount to add
+  // x=counter
+  // m=slope
+  // b= exponent-- how much is added to begin with
+  // max out at max
+
+  int y;
+  if (counter>=min) {
+    int percent=a*100;
+    int q = counter^(percent/100);
+    y=floor(q,1);
+  }
+  else {
+    y = 0;
+  }
+  return counter-y;
+
+}
+
+int raiseExp(int counter, int min, float a) {
+  // determines the amount to subtract from a counter
+  // y=x^a
+  // y=the amount to add to the counter
+  // x=counter
+  // a=exponent
+  // max out at max
+
+  int y;
+  if (counter>=min) {
+    int percent=a*100;
+    int q = counter^(percent/100);
+    y=floor(q,1);
+  }
+  else {
+    y = 0;
+  }
+  return counter+y;
+
+}
+
+void processImpulses(int p) {
+  // processes the nerve impulses to determine if it is a real value or noise
+
+  // check the difference between the current read and the average
+  int diff = getDiff(p);
+  // Serial.println(String(p)+": "+String(diff)+" / "+String(petDiff[p])+" / "+String(painDiff[p]));
+
+  // if it is negative, then re-average the read
+  if (diff<0) {
+    nerveReadsAvg[p]=(nerveReadsAvg[p]+nerveReads[p])/2;
+  }
+  else if (diff>petDiff[p]) { // if it is above the petDiff value, then you are being petted or squished
+    if (diff>painDiff[p]) {
+      // get the average of the next 5 or so values, and get info on if you are above threshold
+      if (evaluateDiff(p,diff,painDiff[p])) {  // if it is above threshold
+        // average it to threshold
+        painDiff[p]=painDiff[p]*0.8+diff*0.2;
+        // ADD TO PAIN
+        painCounter[p]=ceil(raiseLinear(painCounter[p], 1000, 0,2),1000); // this is a linear increase of 2 each time
+      }
+      else {
+        // SUBTRACT FROM PAIN
+        painCounter[p]=floor(lowerExp(painCounter[p],0,0.5),0); // this subtracts rapidly at the beginning and less at the end
+      }
+    }
+    else {
+      // check if being pet
+      if (evaluateDiff(p,diff,petDiff[p])) {  // if it is above threshold
+        // average it to threshold
+        petDiff[p]=petDiff[p]*0.8+diff*0.2;
+        // ADD TO PET
+        petCounter[p]=ceil(raiseLinear(petCounter[p], 1000, 0,2),500); // this is a linear increase of 2 each time
+      }
+      else {
+        // SUBTRACT FROM PET
+        petCounter[p]=floor(lowerExp(petCounter[p],0,0.5),0)
+        ; // this subtracts rapidly at the beginning and less at the end
+      }
     }
   }
 
-  parseCounters(petCounterFace[0],painCounterFace[0],0);
-  parseCounters(petCounterFace[1],painCounterFace[1],1);
-  parseCounters(petCounterFace[2],painCounterFace[2],2);
-
 }
 
-void evaluateReads(int p) {
-  if (petThresholdFace[p]<faceReads[p] && faceReads[p]<painThresholdFace[p]) {
-
-    // if (p==0) {Serial.println("Head pats!");}
-    // else if (p==1) {Serial.println("Left ear pats!");}
-    // else if (p==2) {Serial.println("Right ear pats!");}
-
-    // get average
-    petThresholdFace[p]=0.2*faceReads[p]+0.8*petThresholdFace[p];
-
-    // set counters
-    petCounterFace[p]=petCounterFace[p]+2;
-    if (painCounterFace[p]<0) {painCounterFace[p]=0;} else {painCounterFace[p]--;}
-
+int averageNextReads(int p, int avg, int loops) {
+  int i=0;
+  int finalAvg;
+  while (i<loops) {
+    finalAvg=(avg+readNerve(p))/2;
+    i++;
   }
-
-  else if (faceReads[p]>=painThresholdFace[p]) {  // pain
-
-    // if (p==0) {Serial.println("Head squish!");}
-    // else if (p==1) {Serial.println("Left ear squish!");}
-    // else if (p==2) {Serial.println("Right ear squish!");}
-
-    // get average
-    painThresholdFace[p]=0.2*faceReads[p]+0.8*painThresholdFace[p];
-
-    // set counters
-    painCounterFace[p]=painCounterFace[p]+2;
-    if (petCounterFace[p]<0) {petCounterFace[p]=0;} else {petCounterFace[p]--;}
-  }
-
-  else {  // no movement
-    // get average
-    faceReadsAvg[p]=0.1*faceReads[p]+0.9*faceReadsAvg[p];
-    //set counters
-    petCounterFace[p]=floor(petCounterFace[p]--,0);
-    painCounterFace[p]=floor(painCounterFace[p]--,0);
-  }
-
+  return finalAvg;
 }
 
-void setCounters(int r,int petThreshold,int painThreshold,int petCounter,int painCounter) {
-  if (petThreshold<r && r<painThreshold) {
-    // head is petted, make happy noises and twitch tail a lot, the longer that you pet
-    // Serial.println("Head pats!");
-    petCounter=petCounter+2;
-    if (painCounter<0) {painCounter=0;} else {painCounter--;}
+void parseCounters(int pet, int pain, int p) {
 
-    // twitch tail, with greater intensity the more petCounterFace you have.
-  }
-  else if (r>=painThreshold) {
-    // head is in pain, twitch back and forth
-    // Serial.println("Head squish!");
-    painCounter=painCounter+2;
-    if (petCounter<0) {petCounter=0;} else {petCounter--;}
-  }
-  else {
-    if (petCounter<0) {petCounter=0;} else {petCounter--;}
-    if (painCounter<0) {painCounter=0;} else {painCounter--;}
-  }
-}
+  Serial.println(String(p)+": "+String(pet)+", "+String(pain));
 
-void parseCounters(int pet, int pain, int spot) {
-
-  Serial.println(String(spot)+": "+String(pet)+", "+String(pain));
-
-  // spot: 0=top of head, 1=left side of head, 2=right side of head
+  // p: 0=top of head, 1=left side of head, 2=right side of head
 
   // rebalance if both are nonzero
   if (pet!=0 && pain!=0) {
@@ -365,7 +407,7 @@ void parseCounters(int pet, int pain, int spot) {
   pet=ceil(pet,500);
   pain=ceil(pain,1000);
 
-  if (spot==0) {
+  if (p==0) {
     // top of head
 
     if (pet<4 && pet>0) {
@@ -384,7 +426,7 @@ void parseCounters(int pet, int pain, int spot) {
     }
   }
 
-  if (spot==1) {
+  if (p==1) {
     // left side-- turn left
     if (pet<4 && pet>0) {
       accelerate("s0,120,1.5");
@@ -395,7 +437,7 @@ void parseCounters(int pet, int pain, int spot) {
     }
   }
 
-  if (spot==2) {
+  if (p==2) {
     // right side-- turn right
     if (pet<4 && pet>0) {
       accelerate("s0,60,1.5");
@@ -407,12 +449,6 @@ void parseCounters(int pet, int pain, int spot) {
   }
 
 }
-
-// head turn
-  // head must turn towards L or R and then at random rate turn and touch
-
-
-// tail wag
 
 void startPos() {
     linear("s0,60");
