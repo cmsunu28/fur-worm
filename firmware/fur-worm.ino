@@ -30,7 +30,7 @@ int lastServo=0;
 int ampPerlin;  // amplitude
 int servoPerlin;    // servo
 
-int squeezed=500;   // the minimum before it is decided that you are squeezing it
+int squeezed=500;   // if value is below this, you are squeezing it
 int millisAtStateChange=0;
 
 int state=0;
@@ -238,7 +238,7 @@ int checkForHeld(int s) {
     // set timer over stated checkInterval and check to see if the average is above the average needed
     if (t>lastMonitor+monitorInterval) {
         // time is up! evaluate the average
-        if (senseAvg>squeezed) {
+        if (senseAvg<squeezed) {
             Serial.println("                    squeezed");
             if (t>millisAtStateChange+stateThresholds[s]) {
                 millisAtStateChange=millis();
